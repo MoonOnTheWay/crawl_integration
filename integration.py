@@ -1,11 +1,23 @@
 from argparse import ArgumentParser
-from utils import *
 from datetime import date
 from goose import Goose
 import collections
 import mysql.connector
 import hashlib
 import arxiv
+import requests
+import time
+import json
+from goose import Goose
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
+from selenium import webdriver
+from selenium.webdriver.support.ui import Select
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.options import Options
+from bs4 import BeautifulSoup
+from rake_nltk import Rake
 
 mydb = mysql.connector.connect(
 	  host="128.111.54.55",
@@ -15,6 +27,19 @@ mydb = mysql.connector.connect(
 	  charset='utf8mb4'
 	)
 mycursor = mydb.cursor()
+
+headers = requests.utils.default_headers()
+headers.update({
+    'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0',
+})
+
+chrome_options = Options()  
+chrome_options.add_argument("--headless")  
+chrome_options.add_argument('--disable-extensions')
+chrome_options.add_argument('--disable-gpu')
+chrome_options.add_argument('--no-sandbox')
+prefs = {'profile.managed_default_content_settings.images':2}
+chrome_options.add_experimental_option("prefs", prefs)
 
 
 def main():
@@ -44,7 +69,7 @@ def main():
 	START_DAY = int(args.START_DAY)
 	END_DAY = int(args.END_DAY)
 
-	crawl_medium_templates()
+	# crawl_medium_templates()
 	crawl_medium()
 	crawl_others()
 
@@ -311,6 +336,78 @@ def import_to_database(data):
 				print url
 			continue
 
+# crawl all the blog links given a page link
+def extract_whole_page_urls(url, xpath):
+	while True:
+		try:
+			driver = webdriver.Chrome(chrome_options=chrome_options)
+			break
+		except Exception as e:
+			print e
+			print 'restart'
+			pass
+
+	try:
+		driver.get(url)
+	except:
+		print 'fail to get page link'
+		driver.quit()
+		return []
+
+	SCROLL_PAUSE_TIME = 4
+	# Get scroll height
+	last_height = driver.execute_script("return document.body.scrollHeight")
+
+	while True:
+		# Scroll down to bottom
+		driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+		# Wait to load page
+		time.sleep(SCROLL_PAUSE_TIME)
+		# Calculate new scroll height and compare with last scroll height
+		new_height = driver.execute_script("return document.body.scrollHeight")
+		if new_height == last_height:
+			break
+		last_height = new_height
+
+	divs = driver.find_elements_by_xpath(xpath)
+
+	urls = []
+	for div in divs:
+		try:
+			url = div.get_attribute('href')
+		except:
+			continue
+		if url == None or len(url) == 0:
+			continue
+		urls.append(url)
+
+	driver.quit()
+	return urls
+
+
+def extract_keywords(text):
+	r = Rake() # Uses stopwords for english from NLTK, and all puntuation characters.
+	r.extract_keywords_from_text(text)
+	return r.get_ranked_phrases() # To get keyword phrases ranked highest to lowest.
+
+# convert interger year/month/day to string
+def convert_number_to_str(number):
+	if number < 10:
+		string = '0' + str(number)
+	else:
+		string = str(number)
+	return string
+
+# check if there is redirect
+def check_redirect(url):
+	r = requests.get(url)
+	if r.status_code == 404:
+		return True
+	if len(r.history) == 0 or len(r.history) == 2:
+		return False
+	else:
+		print 'redirect: ' + url
+		return True
 main()
 
 
