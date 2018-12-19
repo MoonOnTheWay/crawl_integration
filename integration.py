@@ -69,8 +69,8 @@ def main():
 	START_DAY = int(args.START_DAY)
 	END_DAY = int(args.END_DAY)
 
-	# crawl_medium_templates()
 	crawl_medium()
+	crawl_medium_templates()
 	crawl_others()
 
 
